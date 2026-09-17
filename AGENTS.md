@@ -48,7 +48,7 @@ No CI exists yet; the gate is local only.
 
 1. **`async with client` calls `start()`**, which prompts interactively on stdin when unauthorized — an agent process hangs forever. All non-auth commands use the `session()` contextmanager: `connect()` → `is_user_authorized()` check → fail fast. Only `cmd_auth` may call `start()`.
 2. **Name collision:** `types.UpdateDialogFilter` is an _update event_; the request is `functions.messages.UpdateDialogFilterRequest`. Wrong namespace = isinstance checks silently fail.
-3. **Folder titles are `TextWithEntities`** (Folders 2.0), not strings. Always extract text via `filter_title()`; when constructing, pass `types.TextPlain(title)`. Server rejects full-filter updates that drop fields — send the whole `DialogFilter` back, not a partial.
+3. **Folder titles are `TextWithEntities`** (Folders 2.0), not strings. Always extract text via `filter_title()`; when constructing, pass `types.TextWithEntities(text=title, entities=[])` — `types.TextPlain` is the RichText `textPlain` constructor and the server rejects it with `TEXT_WITH_ENTITIES_OBJECT_INVALID`. Server rejects full-filter updates that drop fields — send the whole `DialogFilter` back, not a partial.
 4. **Folders are saved views, not containers**: membership = presence in `DialogFilter.include_peers`. "Move" is additive append + `UpdateDialogFilterRequest(id, filter)`. Chats may legitimately live in multiple folders.
 5. **IDs are marked**: users positive, groups negative, channels/supergroups `-100…`. Compare with `telethon.utils.get_peer_id()` on both sides before any equality check.
 6. **API drift defense:** `unwrap_filters()` handles both a bare filter list and a wrapper exposing `.filters` — keep it that way when touching folder code.

@@ -148,6 +148,13 @@ def test_new_folder_title_limit():
         pass
 
 
+def test_new_filter_title_is_text_with_entities():
+    f = tg.new_filter(3, "News")
+    assert isinstance(f.title, types.TextWithEntities)
+    assert f.title.text == "News"
+    assert f.title.entities == []
+
+
 # --- prime skill ------------------------------------------------------------
 
 

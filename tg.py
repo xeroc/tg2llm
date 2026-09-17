@@ -150,7 +150,7 @@ def new_filter(fid, title):
         raise CliError(f"folder title >{MAX_TITLE} chars: {title!r}")
     return types.DialogFilter(
         id=fid,
-        title=types.TextPlain(title),
+        title=types.TextWithEntities(text=title, entities=[]),
         pinned_peers=[],
         include_peers=[],
         exclude_peers=[],
