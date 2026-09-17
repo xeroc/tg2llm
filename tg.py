@@ -22,6 +22,85 @@ SESSION = os.environ.get(
     "TG_SESSION", os.path.expanduser("~/.config/tg-sort/session")
 )
 
+PRIME = """\
+# tg — Telegram folder-sorting skill
+
+CLI over a Telegram USER account (MTProto). Reads chats/contacts, sorts chats
+into folders. JSON on stdout; errors {"error": ...} on stderr, exit 1.
+
+## Safety rules (MANDATORY)
+
+- Write commands are: create-folder, move (without --dry-run), archive.
+- NEVER send a write command without human confirmation.
+- Before every write: show the human the exact plan (chat titles -> target
+  folders), run the intent with --dry-run, present the result, wait for an
+  explicit OK. No OK = no write.
+- Read commands (chats, contacts, read, folders, prime) change nothing. Use
+  them freely.
+
+## Commands
+
+  tg chats [--folder F] [--limit N]   all dialogs: id, title, type, unread,
+                                      folders, archived, last_message
+  tg read CHAT [--last N]             N most recent messages, oldest first
+  tg contacts                         contact list
+  tg folders                          folders with member chat ids
+  tg create-folder TITLE [--chat C]   new folder (TITLE <= 12 chars, max 10)
+  tg move CHAT --to F [--create]      add CHAT to folder F, ADDITIVE
+                                      [--dry-run: plan only, sends nothing]
+  tg archive CHAT [--undo]            archive / unarchive a chat
+
+Rules:
+- CHAT is a marked id from `tg chats` (users >0, groups <0, channels -100...)
+  or @username. Pass ids back verbatim.
+- F matches a folder by title (case-insensitive) or id. --create makes a
+  missing folder; folder names max 12 chars.
+- move is additive: a chat may live in several folders. "already" = no-op.
+- Throttle: sleep between writes, honor FloodWait.
+
+## Sort workflow
+
+1. Inventory:  tg chats
+2. Classify:   pick chats with empty or wrong folders, inspect content:
+               tg read <chat_id> --last 20
+3. Plan:       check existing folders (tg folders), assign each chat a folder
+4. CONFIRM:    show the human the plan + dry-run each move:
+               tg move <chat_id> --to "<folder>" --dry-run
+5. Apply only after explicit human approval:
+               tg move <chat_id> --to "<folder>"
+6. Optionally archive noise channels (same confirm rule):
+               tg archive <chat_id>
+
+## Example session
+
+$ tg chats
+[
+ { "id": -1001701234567, "title": "Solana News", "type": "channel",
+   "unread": 42, "folders": [], "archived": false,
+   "last_message": { "date": "...", "text": "Mainnet upgrade shipped" } }
+]
+
+$ tg read -1001701234567 --last 3
+[
+ { "id": 4812, "date": "...", "sender_id": 987654321,
+   "text": "SOL validators: upgrade at epoch 520" }
+]
+
+# -> propose to human: "Solana News" -> folder "Crypto" ; wait for OK
+
+$ tg move -1001701234567 --to Crypto --dry-run
+{
+ "chat": -1001701234567,
+ "folder": { "id": 5, "title": "Crypto" },
+ "action": "added",
+ "dry_run": true,
+ "include_count": { "before": 3, "after": 4 }
+}
+
+# human confirms -> apply
+$ tg move -1001701234567 --to Crypto
+"""
+
 
 class CliError(Exception):
     pass
@@ -265,6 +344,10 @@ async def cmd_move(args):
         )
 
 
+async def cmd_prime(_):
+    print(PRIME)
+
+
 async def cmd_archive(args):
     async with session() as c:
         await must_auth(c)
@@ -287,6 +370,8 @@ def main(argv=None):
     sub = p.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("auth", help="one-time interactive login")
+
+    sub.add_parser("prime", help="print the agent skill (how to use this CLI)")
 
     sub.add_parser("contacts", help="list contacts")
 
@@ -317,6 +402,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     handler = {
         "auth": cmd_auth,
+        "prime": cmd_prime,
         "contacts": cmd_contacts,
         "chats": cmd_chats,
         "read": cmd_read,

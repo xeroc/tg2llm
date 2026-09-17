@@ -146,3 +146,15 @@ def test_new_folder_title_limit():
         raise AssertionError("expected CliError")
     except tg.CliError:
         pass
+
+
+# --- prime skill ------------------------------------------------------------
+
+
+def test_prime_skill_safety_rules_present():
+    low = tg.PRIME.lower()
+    assert "never send a write command without human confirmation" in low
+    assert "dry-run" in low and "explicit ok" in low
+    for cmd in ("chats", "read", "contacts", "folders", "create-folder", "move", "archive"):
+        assert cmd in tg.PRIME
+    assert tg.PRIME.startswith("# tg")
