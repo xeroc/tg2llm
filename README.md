@@ -32,7 +32,32 @@ tg chats  →  tg read <chat>  →  tg move <chat> --to <folder>
 - A Telegram account
 - An `api_id` / `api_hash` pair — create once at [my.telegram.org](https://my.telegram.org) → _API development tools_
 
-## Getting started (clone → using)
+## Install (from PyPI)
+
+The package is published as [`tg2llm`](https://pypi.org/project/tg2llm/); installing it puts the **`tg`** command on your PATH:
+
+```bash
+uv tool install tg2llm     # recommended (isolated env)
+# or: pipx install tg2llm
+# or: pip install tg2llm
+
+tg --help                  # verify
+```
+
+Note the difference: the _package_ is `tg2llm`, the _command_ it installs is `tg` (defined via `[project.scripts]` in `pyproject.toml`).
+
+Then log in once (interactive — phone + code + optional 2FA):
+
+```bash
+export TG_API_ID=... TG_API_HASH=...   # from my.telegram.org
+tg auth
+```
+
+That's it — the session lands in `~/.config/tg-sort/session` and every later command runs non-interactive.
+
+## Getting started from source (clone → using)
+
+For development or customization:
 
 ```bash
 git clone <this-repo> && cd Telegram
@@ -46,7 +71,7 @@ cp .env.example .env      # then edit: TG_API_ID, TG_API_HASH
 # 3. one-time interactive login (phone + code + optional 2FA)
 make auth
 
-# 4. optional: install system-wide so `tg` works from anywhere
+# 4. optional: install system-wide from this checkout
 make install
 
 # 5. use it
@@ -73,17 +98,17 @@ uv tool install .                         # system-wide
 
 ## Make targets
 
-| Target           | What it does                                  |
-| ---------------- | --------------------------------------------- |
-| `make setup`     | `uv sync` — create/refresh `.venv`            |
-| `make auth`      | One-time interactive login                    |
-| `make install`   | Install `tg` system-wide (`uv tool install`)  |
-| `make uninstall` | Remove the system-wide binary                 |
-| `make test`      | Run the test suite                            |
-| `make lint`      | ruff checks                                   |
-| `make fmt`       | ruff autofix                                  |
-| `make check`     | lint + test — the gate every change must pass |
-| `make clean`     | Remove caches                                 |
+| Target           | What it does                                                      |
+| ---------------- | ----------------------------------------------------------------- |
+| `make setup`     | `uv sync` — create/refresh `.venv`                                |
+| `make auth`      | One-time interactive login                                        |
+| `make install`   | Install `tg` system-wide from this checkout (`uv tool install .`) |
+| `make uninstall` | Remove the system-wide binary                                     |
+| `make test`      | Run the test suite                                                |
+| `make lint`      | ruff checks                                                       |
+| `make fmt`       | ruff autofix                                                      |
+| `make check`     | lint + test — the gate every change must pass                     |
+| `make clean`     | Remove caches                                                     |
 
 The Makefile loads `.env` automatically, so `make auth` picks up your credentials without exporting anything.
 
@@ -268,7 +293,7 @@ The suite covers the pure helpers (filter lookup, title extraction, id allocatio
 | Command hangs forever                           | You're probably calling `tg auth` from a non-interactive context. `auth` is the only command that prompts; run it once from a terminal |
 | `FloodWaitError` in output                      | The wrapper retries once automatically; if you still see it, slow the agent loop down (sleep between moves)                            |
 | `tg: command not found` after `make install`    | `~/.local/bin` not on `PATH` — add `export PATH="$HOME/.local/bin:$PATH"`                                                              |
-| Updates not picked up after code changes        | `make install` runs `uv tool install --upgrade .` — rerun it                                                                           |
+| Updates not picked up after code changes        | If installed from PyPI: `uv tool upgrade tg2llm`. If from a checkout: `make install` (runs `uv tool install --upgrade .`)              |
 | Login SMS never arrives                         | Try login code via Telegram app (option appears after the phone step)                                                                  |
 
 ## Security notes
@@ -280,6 +305,6 @@ The suite covers the pure helpers (filter lookup, title extraction, id allocatio
 ## Uninstall
 
 ```bash
-make uninstall   # removes the system-wide binary
-rm -rf ~/.config/tg-sort   # session + credentials cache
+uv tool uninstall tg2llm    # or: pipx uninstall tg2llm / pip uninstall tg2llm
+rm -rf ~/.config/tg-sort    # session + credentials cache
 ```
