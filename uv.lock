@@ -104,7 +104,7 @@ wheels = [
 ]
 
 [[package]]
-name = "tg-cli"
+name = "tg2llm"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

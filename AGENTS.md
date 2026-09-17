@@ -42,7 +42,7 @@ No CI exists yet; the gate is local only.
 
 ## Build / Install
 
-`uv tool install --upgrade .` builds a wheel (hatchling, `only-include = ["tg.py"]` — flat module, this flag is load-bearing) and links `~/.local/bin/tg`. Rerun after any `tg.py` change for the installed binary to pick it up. Package name is `tg-cli` (avoids PyPI collision with GramJS's `telegram`).
+`uv tool install --upgrade .` builds a wheel (hatchling, `only-include = ["tg.py"]` — flat module, this flag is load-bearing) and links `~/.local/bin/tg`. Rerun after any `tg.py` change for the installed binary to pick it up. Package name is `tg2llm` (avoids PyPI collision with GramJS's `telegram`).
 
 ## Telethon Gotchas (the load-bearing knowledge)
 

@@ -15,7 +15,7 @@ install: ## Install tg system-wide via uv tool
 	$(UV) tool install --upgrade .
 
 uninstall: ## Remove system-wide tg
-	$(UV) tool uninstall tg-cli
+	$(UV) tool uninstall tg2llm
 
 auth: ## One-time interactive Telegram login
 	$(UV) run python tg.py auth

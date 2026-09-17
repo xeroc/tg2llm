@@ -1,5 +1,5 @@
 [project]
-name = "tg-cli"
+name = "tg2llm"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
