@@ -1,11 +1,8 @@
 [project]
 name = "tg2llm"
-version = "0.1.0"
+version = "0.2.0"
 requires-python = ">=3.12"
-dependencies = [
-    "mcp>=2",
-    "telethon>=1.45.0",
-]
+dependencies = ["mcp>=2", "telethon>=1.45.0"]
 
 [project.scripts]
 tg = "tg:main"
@@ -18,6 +15,4 @@ build-backend = "hatchling.build"
 only-include = ["tg.py"]
 
 [dependency-groups]
-dev = [
-    "pytest>=9.1.1",
-]
+dev = ["pytest>=9.1.1"]
