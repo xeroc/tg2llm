@@ -2,16 +2,16 @@
 
 ## Project Overview
 
-`tg` is a single-file Python CLI (`tg.py`, ~340 lines) that exposes a Telegram **user account** via MTProto (Telethon) so an AI agent can inventory chats/contacts, read recent messages, and sort chats into folders. All output is JSON; all write paths are additive and dry-runnable. There is deliberately no framework, no package layout, no second module.
+`tg` is a single-file Python CLI (`tg.py`, ~700 lines) that exposes a Telegram **user account** via MTProto (Telethon) so an AI agent can inventory chats/contacts, read recent messages, and sort chats into folders. `tg mcp` additionally runs the same surface (plus messaging: send, react, mark-read, media download) as a **stdio MCP server** (official `mcp` SDK v2, 13 tools). All output is JSON; all write paths are additive and dry-runnable. There is deliberately no framework, no package layout, no second module.
 
 ## Setup Commands
 
 ```bash
-make setup     # uv sync — creates .venv, installs telethon + pytest
+make setup     # uv sync — creates .venv, installs telethon + mcp SDK + pytest
 make install   # system-wide binary via `uv tool install .` (project.scripts: tg = "tg:main")
 ```
 
-Credentials: `cp .env.example .env` and fill `TG_API_ID`/`TG_API_HASH` (from my.telegram.org). The Makefile auto-exports `.env`. Live login is interactive and human-only: `make auth` (session lands in `~/.config/tg-sort/session`). Without credentials/login every command exits fast with a JSON error — that is by design, not a bug.
+Credentials: `cp .env.example .env` and fill `TG_API_ID`/`TG_API_HASH` (from <https://my.telegram.org/apps> → _API development tools_). The Makefile auto-exports `.env`. Live login is interactive and human-only: `make auth` (session lands in `~/.config/tg-sort/session`). Without credentials/login every command exits fast with a JSON error — that is by design, not a bug.
 
 ## Verification Gate
 
@@ -30,13 +30,14 @@ No CI exists yet; the gate is local only.
 - Tests are **offline by design**: pure helpers are exercised directly, and `move_chat()` runs against `FakeClient` (records every request; returns canned filters). Never add a test that needs a real session or network.
 - New write-path logic (folder mutation, archive, anything sending a request) must get a `--dry-run`-style test asserting **zero requests sent**, plus a happy-path test asserting the exact request type (`functions.messages.UpdateDialogFilterRequest`).
 - TDD: write the failing test first, watch it fail, then implement.
+- MCP tool cores are the shared `async def fn(c, ...)` functions used by both CLI handlers and `bind_tool()`; test them directly against `FakeClient`. `test_mcp_server_stdio_roundtrip` spawns the real server subprocess with `TG_*` env stripped — keep it offline and credential-free.
 
 ## Code Style
 
-- Stdlib only for the CLI (`argparse`, `asyncio`, `contextlib`, `json`). Telethon is the only runtime dependency.
+- Stdlib only for the CLI core (`argparse`, `asyncio`, `contextlib`, `json`). Runtime deps: Telethon + the official `mcp` SDK (v2: `MCPServer`), imported lazily inside `bind_tool`/`build_mcp_server` — plain CLI startup must stay SDK-free.
 - One file. Do not split `tg.py` into a package unless it hurts.
 - No comments unless asked; function/variable names carry the meaning.
-- Structure to preserve, top to bottom: constants → `CliError` → output/transport helpers (`out`, `call`, `session`) → pure helpers (`unwrap_filters`, `filter_title`, `find_filter`, `next_filter_id`, `new_filter`, `folder_membership`, `chat_row`, `parse_chat`) → `move_chat` → command handlers → `main()`.
+- Structure to preserve, top to bottom: constants → `CliError` → output/transport helpers (`out`, `call`, `session`) → pure helpers (`unwrap_filters`, `filter_title`, `find_filter`, `next_filter_id`, `new_filter`, `folder_membership`, `chat_row`, `parse_chat`) → `move_chat` → shared cores (CLI + MCP: `me_row`, `chats_rows`, `history_rows`, `search_rows`, `contacts_rows`, `folders_rows`, `download_media`, `send_message`, `react`, `mark_read`, `archive_chat`, `create_folder`, `move_to_folder`) → MCP server (`MCP_TOOLS`, `mcp_client`, `bind_tool`, `build_mcp_server`, `cmd_mcp`) → command handlers → `main()`.
 - Pure helpers must stay Telethon-importable-but-callable without a client — that's what makes them testable.
 - Errors: raise `CliError` with a message; `main()` turns it into `{"error": ...}` + exit 1. Never `sys.exit` deep in helpers.
 
@@ -53,6 +54,7 @@ No CI exists yet; the gate is local only.
 5. **IDs are marked**: users positive, groups negative, channels/supergroups `-100…`. Compare with `telethon.utils.get_peer_id()` on both sides before any equality check.
 6. **API drift defense:** `unwrap_filters()` handles both a bare filter list and a wrapper exposing `.filters` — keep it that way when touching folder code.
 7. FloodWait: all requests go through `call()` which sleeps `e.seconds + 1` and retries once. Don't bypass it.
+8. **MCP SDK v2:** `MCPServer` (not FastMCP — that's v1). Stdin EOF cancels in-flight tool calls — when probing `tg mcp` manually, keep stdin open until responses arrive. A bare `-> list` return emits **one content item per element** and no structured output — `bind_tool()` wraps list results as `{"rows": [...]}`; keep that. `structured_output=True` rejects plain `dict`/`list[dict]` returns (`InvalidSignature`) — leave it on auto. Concurrency: lazy client init must stay behind `_MCP_LOCK`, or parallel tool calls build two TelegramClients on one session file.
 
 ## LSP Noise
 
@@ -61,7 +63,7 @@ The editor reports ~8 type errors in `tg.py` (TextPlain assignability, `start()`
 ## Debugging
 
 - Smoke path after changes: `./tg --help`, then `tg chats` against a real session.
-- `tg move <chat> --to <folder> --dry-run` is the safe probe for folder logic.
+- MCP smoke: spawn `tg mcp`, send initialize + tools/call over stdio **with stdin held open** (see `test_mcp_server_stdio_roundtrip`).
 - Session file `~/.config/tg-sort/session` is the account credential — never read, copy, or commit it; `*.session` is gitignored.
 - To test against a scratch account: `TG_SESSION=~/.config/tg-sort/session-test` isolates the session.
 
@@ -70,4 +72,4 @@ The editor reports ~8 type errors in `tg.py` (TextPlain assignability, `start()`
 - `make check` green (lint errors are fixed, never skipped — no "pre-existing" excuses)
 - New logic got a failing-test-first pass
 - Write paths: dry-run test included, request counts asserted
-- README updated if the CLI surface, env vars, or limits changed
+- README updated if the CLI surface, MCP surface, env vars, or limits changed

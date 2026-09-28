@@ -1,6 +1,6 @@
 # tg — Telegram sorting CLI for AI agents
 
-`tg` is a single-file Python CLI that exposes a **Telegram user account** to AI agents (or humans): it lists contacts, chats and folders, reads recent messages, and sorts chats into folders. All output is JSON on stdout, all errors are JSON on stderr with a non-zero exit code — built to be shell-scripted by an agent loop:
+`tg` is a single-file Python CLI that exposes a **Telegram user account** to AI agents (or humans): it lists contacts, chats and folders, reads recent messages, and sorts chats into folders — and `tg mcp` runs the same surface (plus messaging) as a local **MCP server** over stdio. All output is JSON on stdout, all errors are JSON on stderr with a non-zero exit code — built to be shell-scripted by an agent loop:
 
 ```
 tg chats  →  tg read <chat>  →  tg move <chat> --to <folder>
@@ -14,8 +14,7 @@ tg chats  →  tg read <chat>  →  tg move <chat> --to <folder>
 - **Inventory** — all dialogs with type, unread count, folder memberships, archive state and last-message preview in one call
 - **Read** — recent messages of any chat (the classification input for your agent)
 - **Folders** — list, create, and add chats to folders (additive; a chat may live in several folders)
-- **Archive** — one call to archive/unarchive a chat
-- **Agent-proof** — JSON everywhere, `--dry-run` on writes, FloodWait auto-retry, no interactive prompts unless you ask for them
+- **MCP server** — `tg mcp`: 13 tools over stdio (chats, history, search, folders, contacts, media download, send, react, mark-read, archive) for Claude Code, Codex, opencode, …
 
 ## Tech stack
 
@@ -24,13 +23,13 @@ tg chats  →  tg read <chat>  →  tg move <chat> --to <folder>
 - **Packaging**: [uv](https://docs.astral.sh/uv/) + hatchling
 - **Tests**: pytest (pure-logic tests against fake clients — no network)
 - **Lint**: ruff
-- **CLI**: stdlib `argparse`, zero other runtime deps
+- **CLI**: stdlib `argparse`; **MCP**: official [`mcp`](https://pypi.org/project/mcp/) SDK v2 (lazily imported — CLI startup stays SDK-free)
 
 ## Prerequisites
 
 - Python 3.12+ and [uv](https://docs.astral.sh/uv/getting_started/install/)
 - A Telegram account
-- An `api_id` / `api_hash` pair — create once at [my.telegram.org](https://my.telegram.org) → _API development tools_
+- An `api_id` / `api_hash` pair — create once at [my.telegram.org/apps](https://my.telegram.org/apps) → _API development tools_
 
 ## Install (from PyPI)
 
@@ -49,7 +48,7 @@ Note the difference: the _package_ is `tg2llm`, the _command_ it installs is `tg
 Then log in once (interactive — phone + code + optional 2FA):
 
 ```bash
-export TG_API_ID=... TG_API_HASH=...   # from my.telegram.org
+export TG_API_ID=... TG_API_HASH=...   # from my.telegram.org/apps
 tg auth
 ```
 
@@ -216,6 +215,10 @@ Adds a chat to a folder, **additively** — other folder memberships stay untouc
 
 Moves a chat to the archive folder (or back with `--undo`).
 
+### `tg mcp`
+
+Runs the MCP server on stdio — see [MCP server (`tg mcp`)](#mcp-server-tg-mcp). Not for humans; an MCP client (Claude Code, Codex, opencode, …) spawns and speaks to it.
+
 ## The agent sorting loop
 
 ```bash
@@ -227,12 +230,83 @@ tg move -1001701234567 --to "AI News" --create    # 4. apply (creates folder if 
 
 Recommended agent policy: dry-run first, batch many moves per run, sleep briefly between calls to stay far away from rate limits.
 
+## MCP server (`tg mcp`)
+
+`tg mcp` runs a stdio MCP server with 13 tools — the whole CLI surface plus messaging writes. Tools marked ⚠ act on your **real account** immediately and are visible to peers; the MCP client's per-tool approval prompt is the only gate.
+
+| Tool | R/W | Purpose |
+| ---- | --- | ------- |
+| `me` | R | logged-in user (id, name, username, phone) |
+| `list_chats(folder?, limit?)` | R | all dialogs with type, unread, folders, archive state, last message |
+| `get_chat_history(chat, limit=20, before_id?)` | R | full-text messages, oldest first; **does not mark read** |
+| `search_messages(query, chat?, limit=20)` | R | global or in-chat message search |
+| `list_contacts` | R | contact list |
+| `list_folders` | R | folders with member chat ids |
+| `download_media(chat, message_id)` | R | saves to `~/.cache/tg2llm/media/`, returns the path |
+| `send_message(chat, text, reply_to?, file?)` | ⚠ | sends **as you** |
+| `react(chat, message_id, emoji)` | ⚠ | set/clear (empty string) an emoji reaction |
+| `mark_read(chat)` | ⚠ | read receipt is visible to the peer |
+| `archive_chat(chat, undo?)` | ⚠ | archive / unarchive |
+| `create_folder(title, chat?)` | ⚠ | new folder (≤12 chars, max 10) |
+| `move_chat_to_folder(chat, to, create?, dry_run?)` | ⚠ | additive; `dry_run=true` previews with zero requests |
+
+Read-only tools carry `readOnlyHint: true` (Codex `writes` approval mode and similar clients use it).
+
+### Connect an MCP client (no install needed — `uvx` fetches from git)
+
+One-time login per machine (interactive — phone + code + 2FA):
+
+```bash
+TG_API_ID=… TG_API_HASH=… uvx --from git+https://github.com/xeroc/tg2llm.git tg auth
+```
+
+Credentials come from [my.telegram.org/apps](https://my.telegram.org/apps) (_API development tools_) — same pair for CLI and MCP.
+
+**Claude Code** (user scope = available in every project):
+
+```bash
+claude mcp add tg --scope user \
+  --env TG_API_ID=$TG_API_ID --env TG_API_HASH=$TG_API_HASH \
+  -- uvx --from git+https://github.com/xeroc/tg2llm.git tg mcp
+```
+
+**Codex**:
+
+```bash
+codex mcp add tg \
+  --env TG_API_ID=$TG_API_ID --env TG_API_HASH=$TG_API_HASH \
+  -- uvx --from git+https://github.com/xeroc/tg2llm.git tg mcp
+```
+
+**opencode** — no non-interactive `add`; put this in `~/.config/opencode/opencode.json`:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "tg": {
+      "type": "local",
+      "command": ["uvx", "--from", "git+https://github.com/xeroc/tg2llm.git", "tg", "mcp"],
+      "environment": { "TG_API_ID": "…", "TG_API_HASH": "…" }
+    }
+  }
+}
+```
+
+Already installed via `uv tool install tg2llm` or `make install`? Use `tg mcp` instead of the `uvx --from …` invocation. Once a release with the MCP server is on PyPI, `uvx --from tg2llm tg mcp` works without the git URL.
+
+Notes:
+
+- The env flags matter when the client is launched from a GUI (no shell exports); the `tg` process needs `TG_API_ID`/`TG_API_HASH` and must reach the session file (`TG_SESSION`, default `~/.config/tg-sort/session`).
+- The server starts without credentials — `tools/list` always works; a missing/invalid session surfaces as a clean per-tool error.
+- The MCP server holds the SQLite session open for its lifetime. Occasional CLI calls alongside are fine, but concurrent writes can throw `database is locked` — don't run a sorting batch in the CLI while the MCP server is mid-write.
+
 ## Environment variables
 
 | Variable      | Required | Default                     | Purpose                       |
 | ------------- | -------- | --------------------------- | ----------------------------- |
-| `TG_API_ID`   | yes      | —                           | API id from my.telegram.org   |
-| `TG_API_HASH` | yes      | —                           | API hash from my.telegram.org |
+| `TG_API_ID`   | yes      | —                           | API id from [my.telegram.org/apps](https://my.telegram.org/apps)   |
+| `TG_API_HASH` | yes      | —                           | API hash from [my.telegram.org/apps](https://my.telegram.org/apps) |
 | `TG_SESSION`  | no       | `~/.config/tg-sort/session` | Telethon session file path    |
 
 ## Architecture
@@ -240,7 +314,7 @@ Recommended agent policy: dry-run first, batch many moves per run, sleep briefly
 ### Project layout
 
 ```
-├── tg.py        # everything: CLI, Telethon plumbing, pure helpers
+├── tg.py        # everything: CLI, MCP server, Telethon plumbing, pure helpers
 ├── test_tg.py   # pytest suite, FakeClient-based — no network
 ├── tg           # dev wrapper: .venv python on tg.py (symlink-free)
 ├── Makefile     # setup / auth / install / test / lint targets
@@ -269,6 +343,7 @@ Because folders are views, a chat can be in several at once — that's why `move
 | `unwrap_filters()`      | Different API layers return either a bare list or a wrapper with `.filters` — handled once here                                                                                                                                   |
 | `find_filter()`         | Case-insensitive title match _or_ numeric id match                                                                                                                                                                                |
 | `move_chat()`           | The whole sort primitive: resolve entity → locate folder → idempotency check → append peer → send. Pure enough to test against a fake client.                                                                                     |
+| `bind_tool()` / `build_mcp_server()` | MCP layer: drops the `client` param from a shared core to build the tool schema, wraps list results as `{"rows": [...]}` (one content item), converts `CliError` → `ToolError`, and connects the Telegram client lazily under a lock on first tool call. |
 
 ### Limits enforced (Telegram's, not ours)
 
@@ -278,11 +353,11 @@ Because folders are views, a chat can be in several at once — that's why `move
 ## Testing
 
 ```bash
-make test          # 15 tests
+make test          # 38 tests
 uv run pytest -q test_tg.py::test_move_dry_run_no_call   # single test
 ```
 
-The suite covers the pure helpers (filter lookup, title extraction, id allocation, membership) and the `move_chat` primitive against a `FakeClient` that records requests — no network, no account needed. The Telethon I/O shell is verified by the smoke path: `tg chats` on a real session.
+The suite covers the pure helpers, the `move_chat` primitive, and all 13 MCP tool cores against a `FakeClient` that records requests; `test_mcp_server_stdio_roundtrip` spawns the real server subprocess (credentials stripped) and asserts the tool catalog, server instructions, and clean per-tool errors — no network, no account needed. The Telethon I/O shell is verified by the smoke path: `tg chats` on a real session.
 
 ## Troubleshooting
 
@@ -299,7 +374,7 @@ The suite covers the pure helpers (filter lookup, title extraction, id allocatio
 ## Security notes
 
 - `.env` and session files are gitignored; the session grants full account access — treat it like a password
-- The tool only ever _reads_ chats and _edits your own folder/archive state_. It never sends messages, so it cannot spam on your behalf
+- The CLI only _reads_ chats and _edits your own folder/archive state_. The **MCP server can send messages, reactions and read receipts as you** — writes are real, immediate, and indistinguishable from you typing. Approval gating is the MCP client's per-tool prompt; treat the session file accordingly.
 - Revoking access: Telegram → Settings → Devices → terminate the session (then delete `~/.config/tg-sort/session`)
 
 ## Uninstall
